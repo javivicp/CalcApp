@@ -30,6 +30,10 @@
   .sl input { flex:1; accent-color:var(--acc); }
   #rowDetail { display:none; }
   .btns { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
+  .zoom { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
+  .zoom button { font-weight:600; font-size:13px; }
+  .zoom button:disabled { opacity:.3; }
+  #cam { transform-origin:center center; }
   button { font:inherit; color:var(--fg); background:rgba(255,255,255,.1); border:0; border-radius:10px;
     padding:10px 2px; font-size:12px; }
   button.on { background:var(--acc); color:#111; }
@@ -54,6 +58,11 @@
 <button id="show" aria-label="Mostrar controles">☰</button>
 
 <div id="bar">
+  <div class="zoom">
+    <button id="z05">0,5x</button>
+    <button id="z1" class="on">1x</button>
+    <button id="z2">2x</button>
+  </div>
   <div class="sl"><label for="op">Opacidad</label><input id="op" type="range" min="5" max="100" value="50"></div>
   <div class="sl" id="rowDetail"><label for="det">Detalle</label><input id="det" type="range" min="1" max="100" value="55"></div>
   <div class="btns">
@@ -85,20 +94,81 @@
   async function startCamera() {
     $('err').textContent = '';
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false
-      });
-      cam.srcObject = stream;
-      await cam.play().catch(() => {});
+      await openStream({ facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } });
+      await findLenses();
       $('intro').style.display = 'none';
       keepAwake();
+      markZoom(1);
     } catch (e) {
       $('err').textContent = (e && e.name === 'NotAllowedError')
         ? 'No has dado permiso a la cámara. Actívalo en los ajustes del navegador y vuelve a intentarlo.'
         : 'No se pudo abrir la cámara. ¿Estás usando la dirección https://?';
     }
   }
+  // ---------- Lentes y zoom (0,5x / 1x / 2x) ----------
+  const lens = { wide: null, main: null, cur: 'main' };
+  const VIDEO = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+
+  async function openStream(video) {
+    if (cam.srcObject) cam.srcObject.getTracks().forEach(t => t.stop());
+    cam.srcObject = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    await cam.play().catch(() => {});
+  }
+  async function findLenses() {
+    try {
+      const back = (await navigator.mediaDevices.enumerateDevices())
+        .filter(d => d.kind === 'videoinput' && /back|rear|trasera|posterior/i.test(d.label));
+      const w = back.find(d => /ultra/i.test(d.label));
+      const m = back.find(d => !/ultra|tele/i.test(d.label));
+      lens.wide = w ? w.deviceId : null;
+      lens.main = m ? m.deviceId : null;
+    } catch (e) {}
+    $('z05').disabled = !lens.wide;
+  }
+  async function applyZoom(z) {
+    let hw = false;
+    try {
+      const t = cam.srcObject.getVideoTracks()[0];
+      const caps = t.getCapabilities ? t.getCapabilities() : {};
+      if (caps.zoom && caps.zoom.min <= z && caps.zoom.max >= z) {
+        await t.applyConstraints({ advanced: [{ zoom: z }] });
+        hw = true;
+      }
+    } catch (e) {}
+    cam.style.transform = (hw || z === 1) ? 'none' : 'scale(' + z + ')';
+  }
+  function markZoom(z) {
+    [['z05', 0.5], ['z1', 1], ['z2', 2]].forEach(p => $(p[0]).classList.toggle('on', p[1] === z));
+  }
+  async function openMain() {
+    await openStream(lens.main
+      ? Object.assign({ deviceId: { exact: lens.main } }, VIDEO)
+      : Object.assign({ facingMode: { ideal: 'environment' } }, VIDEO));
+    lens.cur = 'main';
+  }
+  async function setZoom(z) {
+    if (!cam.srcObject) return;
+    try {
+      if (z === 0.5) {
+        if (!lens.wide) return;
+        if (lens.cur !== 'wide') {
+          await openStream(Object.assign({ deviceId: { exact: lens.wide } }, VIDEO));
+          lens.cur = 'wide';
+        }
+        cam.style.transform = 'none';
+      } else {
+        if (lens.cur !== 'main') await openMain();
+        await applyZoom(z);
+      }
+      markZoom(z);
+    } catch (e) {
+      try { await openMain(); await applyZoom(1); markZoom(1); } catch (e2) {}
+    }
+  }
+  $('z05').addEventListener('click', () => setZoom(0.5));
+  $('z1').addEventListener('click', () => setZoom(1));
+  $('z2').addEventListener('click', () => setZoom(2));
+
   $('go').addEventListener('click', startCamera);
 
   // ---------- Pantalla siempre encendida ----------
