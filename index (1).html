@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Calca">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Calca</title>
+<style>
+  :root { --fg:#f2f2f2; --bg:rgba(20,20,20,.84); --acc:#e8b04a; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:#000; color:var(--fg);
+    font:14px/1.3 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;
+    overflow:hidden; overscroll-behavior:none; }
+
+  #cam { position:fixed; inset:0; width:100%; height:100%; object-fit:contain; background:#000; transform-origin:center center; }
+  #ghost { position:fixed; inset:0; width:100%; height:100%; object-fit:contain; opacity:.55; display:none;
+    pointer-events:none; transform-origin:center center; }
+  #stage { position:fixed; inset:0; touch-action:none; overflow:hidden; }
+  #ref { position:absolute; left:50%; top:50%; transform-origin:center center;
+    pointer-events:none; user-select:none; -webkit-user-drag:none; display:none; will-change:transform; }
+
+  /* marco del papel */
+  #frame { position:fixed; z-index:3; pointer-events:none; display:none;
+    border:2px dashed rgba(232,176,74,.95); box-shadow:0 0 0 1px rgba(0,0,0,.35); }
+  #frame i { position:absolute; width:22px; height:22px; }
+  #frame i::before, #frame i::after { content:''; position:absolute; background:#e8b04a; }
+  #frame i::before { left:10px; top:0; width:2px; height:22px; }
+  #frame i::after { top:10px; left:0; height:2px; width:22px; }
+  #frame i:nth-child(1) { left:-12px; top:-12px; }
+  #frame i:nth-child(2) { right:-12px; top:-12px; }
+  #frame i:nth-child(3) { left:-12px; bottom:-12px; }
+  #frame i:nth-child(4) { right:-12px; bottom:-12px; }
+  #frameLbl { position:absolute; left:50%; top:8px; transform:translateX(-50%); font-size:12px;
+    background:var(--bg); padding:2px 8px; border-radius:8px; white-space:nowrap; }
+
+  #bar { position:fixed; left:0; right:0; bottom:0; z-index:5;
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom)); background:var(--bg);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+  .zoom { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:10px; }
+  .zoom button { font-weight:600; font-size:13px; }
+  .zoom button.sec { font-weight:500; background:transparent; box-shadow:inset 0 0 0 1px rgba(255,255,255,.28); }
+  .zoom button.sec.on { background:var(--acc); box-shadow:none; }
+  button:disabled { opacity:.3; }
+  .sl { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .sl label { width:64px; font-size:12px; opacity:.8; }
+  .sl input { flex:1; accent-color:var(--acc); }
+  #rowDetail { display:none; }
+  .btns { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
+  button { font:inherit; color:var(--fg); background:rgba(255,255,255,.1); border:0; border-radius:10px;
+    padding:10px 2px; font-size:12px; }
+  button.on { background:var(--acc); color:#111; }
+  button:active { opacity:.7; }
+  button.primary { background:var(--acc); color:#111; font-weight:600; font-size:14px; padding:12px; }
+
+  #show { position:fixed; top:calc(10px + env(safe-area-inset-top)); right:10px; z-index:6; display:none;
+    width:44px; height:44px; border-radius:50%; background:var(--bg); font-size:18px; padding:0; }
+
+  #align { position:fixed; left:12px; right:12px; top:calc(10px + env(safe-area-inset-top)); z-index:7; display:none;
+    align-items:center; gap:12px; background:var(--bg); padding:10px 12px; border-radius:14px;
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+  #align span { flex:1; font-size:13px; }
+  #align button { padding:10px 18px; font-size:14px; }
+
+  /* hojas inferiores */
+  .sheet { position:fixed; inset:0; z-index:9; background:rgba(0,0,0,.55); display:none; align-items:flex-end; }
+  .sheet.open { display:flex; }
+  .card { width:100%; max-height:88vh; overflow:auto; background:#1c1c1c; border-radius:18px 18px 0 0;
+    padding:16px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .card h2 { margin:0 0 10px; font-size:17px; font-weight:600; }
+  .field { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:10px 0; }
+  .field > span { opacity:.85; }
+  select, input[type=number] { font:inherit; font-size:16px; color:var(--fg); background:rgba(255,255,255,.1);
+    border:0; border-radius:10px; padding:10px; min-width:0; }
+  input[type=number] { width:90px; text-align:right; }
+  .seg { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:10px 0; }
+  .row { display:flex; align-items:center; gap:10px; margin:12px 0; }
+  .row input { width:20px; height:20px; accent-color:var(--acc); }
+  .res { display:flex; justify-content:space-between; padding:9px 12px; border-radius:10px;
+    background:rgba(255,255,255,.07); margin-bottom:6px; }
+  .res.ok { background:rgba(232,176,74,.25); }
+  .note { opacity:.65; font-size:12px; margin:8px 0; }
+  #recTxt { margin:10px 0; font-weight:600; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:10px 0; }
+  .two > button, .card > button { padding:12px; font-size:14px; }
+  .card > button { width:100%; margin-top:8px; }
+  .srow { display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid rgba(255,255,255,.08); }
+  .srow img { width:48px; height:64px; object-fit:cover; border-radius:6px; background:#333; flex:none; }
+  .srow .stxt { flex:1; font-size:13px; }
+  .srow button { padding:9px 12px; font-size:13px; }
+
+  #toast { position:fixed; left:50%; bottom:230px; transform:translateX(-50%); z-index:20; background:rgba(0,0,0,.85);
+    padding:8px 14px; border-radius:16px; opacity:0; transition:opacity .2s; pointer-events:none; white-space:nowrap; }
+
+  #intro { position:fixed; inset:0; z-index:10; background:#111; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; padding:28px; text-align:center; gap:16px; }
+  #intro img { width:96px; height:96px; border-radius:22px; }
+  #intro h1 { margin:0; font-size:26px; font-weight:600; }
+  #intro p { margin:0; max-width:320px; opacity:.8; }
+  #intro button { background:var(--acc); color:#111; font-size:16px; padding:14px 28px; font-weight:600; }
+  #err { color:#ff8a80; max-width:320px; }
+</style>
+</head>
+<body>
+
+<video id="cam" autoplay playsinline muted></video>
+<img id="ghost" alt="">
+<div id="stage"><img id="ref" alt=""></div>
+
+<div id="frame"><i></i><i></i><i></i><i></i><span id="frameLbl"></span></div>
+
+<div id="align"><span>Mueve el papel hasta que coincida con la foto guardada</span><button id="alignOk" class="primary">Listo</button></div>
+
+<button id="show" aria-label="Mostrar controles">☰</button>
+
+<div id="bar">
+  <div class="zoom">
+    <button id="z05">0,5x</button>
+    <button id="z1" class="on">1x</button>
+    <button id="z2">2x</button>
+    <button id="bPaper" class="sec">Papel</button>
+    <button id="bSess" class="sec">Sesión</button>
+  </div>
+  <div class="sl"><label for="op">Opacidad</label><input id="op" type="range" min="5" max="100" value="50"></div>
+  <div class="sl" id="rowDetail"><label for="det">Detalle</label><input id="det" type="range" min="1" max="100" value="55"></div>
+  <div class="btns">
+    <button id="bPhoto">Foto</button>
+    <button id="bEdge">Contornos</button>
+    <button id="bGray">B/N</button>
+    <button id="bLock">Bloquear</button>
+    <button id="bHide">Ocultar</button>
+  </div>
+</div>
+
+<!-- Hoja: papel -->
+<div class="sheet" id="shPaper"><div class="card">
+  <h2>Papel</h2>
+  <div class="field"><span>Tamaño</span>
+    <select id="selPaper">
+      <option value="a6">A6 · 10,5 × 14,8</option>
+      <option value="a5">A5 · 14,8 × 21</option>
+      <option value="a4">A4 · 21 × 29,7</option>
+      <option value="a3">A3 · 29,7 × 42</option>
+      <option value="b1824">Bloc 18 × 24</option>
+      <option value="b2432">Bloc 24 × 32</option>
+      <option value="custom">Personalizado…</option>
+    </select>
+  </div>
+  <div class="field" id="customRow" style="display:none"><span>Ancho × alto (cm)</span>
+    <span><input id="cw" type="number" inputmode="decimal" step="0.1" min="1"> × <input id="ch" type="number" inputmode="decimal" step="0.1" min="1"></span>
+  </div>
+  <div class="seg"><button id="oV">Vertical</button><button id="oH">Horizontal</button></div>
+  <div class="row"><input type="checkbox" id="cContain"><label for="cContain">Vista completa de la cámara (ve más papel)</label></div>
+  <div class="row"><input type="checkbox" id="cFrame"><label for="cFrame">Mostrar marco del papel</label></div>
+  <div class="field"><span>Altura de mi soporte (cm)</span><input id="inH" type="number" inputmode="decimal" step="1" min="1"></div>
+  <p class="note">Distancia mínima de la cámara al papel para que quepa entero:</p>
+  <div id="res"></div>
+  <div id="recTxt"></div>
+  <button id="useRec" class="primary" style="display:none"></button>
+  <button id="fitRef">Ajustar la imagen al marco</button>
+  <p class="note">Valores aproximados (iPhone 17). Sube o baja el móvil hasta que los bordes del papel coincidan con el marco.</p>
+  <button id="pClose">Cerrar</button>
+</div></div>
+
+<!-- Hoja: sesiones -->
+<div class="sheet" id="shSess"><div class="card">
+  <h2>Sesiones</h2>
+  <p class="note">Guarda la imagen, su posición y una foto del papel. Al reabrirla, mueve el papel hasta que coincida con esa foto.</p>
+  <div class="two"><button id="sSave" class="primary">Guardar</button><button id="sNew" style="display:none">Guardar como nueva</button></div>
+  <div id="sessList"></div>
+  <p class="note">Truco: marca con cinta de pintor las esquinas del papel y la base del vaso sobre la mesa.</p>
+  <button id="sClose">Cerrar</button>
+</div></div>
+
+<div id="toast"></div>
+<input id="file" type="file" accept="image/*" hidden>
+
+<div id="intro">
+  <img src="icon-192.png" alt="">
+  <h1>Calca</h1>
+  <p>Apoya el móvil sobre un vaso mirando al papel, elige una foto de tu galería y calca viendo la imagen sobre el papel real.</p>
+  <button id="go">Activar cámara</button>
+  <p id="err"></p>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const cam = $('cam'), ghost = $('ghost'), stage = $('stage'), ref = $('ref'), file = $('file'),
+        bar = $('bar'), frameEl = $('frame');
+  const st = { x:0, y:0, s:1, r:0, locked:false, edge:false, gray:false, img:null, url:null, edgeUrl:null, blob:null, sid:null };
+  const PAPERS = {
+    a6:['A6',10.5,14.8], a5:['A5',14.8,21], a4:['A4',21,29.7], a3:['A3',29.7,42],
+    b1824:['18×24',18,24], b2432:['24×32',24,32], custom:['Personalizado',0,0]
+  };
+  const P = { type:'a5', orient:'v', w:14.8, h:21, frame:true, contain:true, H:12 };
+  // tangente de la mitad del campo de visión del lado largo del sensor (4:3), a partir de la focal equivalente
+  const TAN = { '0.5': 17.32 / 13, '1': 17.32 / 24, '2': 17.32 / 48 };
+  const VIDEO = { width:{ ideal:1920 }, height:{ ideal:1440 }, aspectRatio:{ ideal:4/3 } };
+  const lens = { wide:null, main:null, cur:'main' };
+  let g = null, wake = null, edgeTimer = null, curZoom = 1, dz = 1, ghostUrl = null, thumbs = [], tt = null;
+
+  const fmt = n => (Math.round(n * 10) / 10).toLocaleString('es-ES');
+  const zl = z => z === 0.5 ? '0,5x' : z + 'x';
+  function toast(m) { const t = $('toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(tt); tt = setTimeout(() => { t.style.opacity = 0; }, 1800); }
+
+  // ---------- Ajustes del papel (se recuerdan) ----------
+  try { const s = JSON.parse(localStorage.getItem('calca.paper') || 'null'); if (s) Object.assign(P, s); } catch (e) {}
+  function saveP() { try { localStorage.setItem('calca.paper', JSON.stringify(P)); } catch (e) {} }
+
+  // ---------- Cámara ----------
+  async function openStream(video) {
+    if (cam.srcObject) cam.srcObject.getTracks().forEach(t => t.stop());
+    cam.srcObject = await navigator.mediaDevices.getUserMedia({ video, audio:false });
+    await cam.play().catch(() => {});
+  }
+  async function startCamera() {
+    $('err').textContent = '';
+    try {
+      await openStream(Object.assign({ facingMode:{ ideal:'environment' } }, VIDEO));
+      await findLenses();
+      $('intro').style.display = 'none';
+      keepAwake();
+      markZoom(1);
+      syncPaperUI();
+    } catch (e) {
+      $('err').textContent = (e && e.name === 'NotAllowedError')
+        ? 'No has dado permiso a la cámara. Actívalo en los ajustes del navegador y vuelve a intentarlo.'
+        : 'No se pudo abrir la cámara. ¿Estás usando la dirección https://?';
+    }
+  }
+  $('go').addEventListener('click', startCamera);
+  cam.addEventListener('resize', () => { updateFrame(); renderPaper(); });
+
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && cam.srcObject) keepAwake();
+  });
+
+  // ---------- Lentes y zoom (0,5x / 1x / 2x) ----------
+  async function findLenses() {
+    try {
+      const back = (await navigator.mediaDevices.enumerateDevices())
+        .filter(d => d.kind === 'videoinput' && /back|rear|trasera|posterior/i.test(d.label));
+      const w = back.find(d => /ultra/i.test(d.label));
+      const m = back.find(d => !/ultra|tele/i.test(d.label));
+      lens.wide = w ? w.deviceId : null;
+      lens.main = m ? m.deviceId : null;
+    } catch (e) {}
+    $('z05').disabled = !lens.wide;
+  }
+  async function applyZoom(z) {
+    let hw = false;
+    try {
+      const t = cam.srcObject.getVideoTracks()[0];
+      const caps = t.getCapabilities ? t.getCapabilities() : {};
+      if (caps.zoom && caps.zoom.min <= z && caps.zoom.max >= z) {
+        await t.applyConstraints({ advanced:[{ zoom:z }] });
+        hw = true;
+      }
+    } catch (e) {}
+    dz = (hw || z === 1) ? 1 : z;
+    cam.style.transform = dz === 1 ? 'none' : 'scale(' + dz + ')';
+  }
+  function markZoom(z) {
+    curZoom = z;
+    [['z05', 0.5], ['z1', 1], ['z2', 2]].forEach(p => $(p[0]).classList.toggle('on', p[1] === z));
+  }
+  async function openMain() {
+    await openStream(lens.main
+      ? Object.assign({ deviceId:{ exact:lens.main } }, VIDEO)
+      : Object.assign({ facingMode:{ ideal:'environment' } }, VIDEO));
+    lens.cur = 'main';
+  }
+  async function setZoom(z) {
+    if (!cam.srcObject) return;
+    try {
+      if (z === 0.5) {
+        if (!lens.wide) return;
+        if (lens.cur !== 'wide') {
+          await openStream(Object.assign({ deviceId:{ exact:lens.wide } }, VIDEO));
+          lens.cur = 'wide';
+        }
+        dz = 1; cam.style.transform = 'none';
+      } else {
+        if (lens.cur !== 'main') await openMain();
+        await applyZoom(z);
+      }
+      markZoom(z);
+    } catch (e) {
+      try { await openMain(); await applyZoom(1); markZoom(1); } catch (e2) {}
+    }
+    updateFrame();
+  }
+  $('z05').addEventListener('click', () => setZoom(0.5));
+  $('z1').addEventListener('click', () => setZoom(1));
+  $('z2').addEventListener('click', () => setZoom(2));
+
+  // ---------- Papel: geometría ----------
+  function paperDims() {            // tamaño del papel en cm según los ejes de la pantalla
+    const lo = Math.min(P.w, P.h), hi = Math.max(P.w, P.h);
+    return P.orient === 'v' ? { x:lo, y:hi } : { x:hi, y:lo };
+  }
+  function paperLabel(p) {
+    p = p || P;
+    const n = p.type === 'custom' ? fmt(p.w) + '×' + fmt(p.h) + ' cm' : PAPERS[p.type][0];
+    return n + (p.orient === 'v' ? ' vertical' : ' horizontal');
+  }
+  function vidRatio() {
+    const w = cam.videoWidth, h = cam.videoHeight;
+    return (w && h) ? Math.min(w, h) / Math.max(w, h) : 0.75;
+  }
+  // extensión visible (cm) por eje de pantalla cuando el lado largo del sensor abarca Lv cm
+  function visible(Lv) {
+    const r = vidRatio(), sw = innerWidth, sh = innerHeight;
+    const s = Math.min(sw, sh) / Math.max(sw, sh);
+    let vl, vs;
+    if (P.contain) { vl = Lv; vs = Lv * r; }
+    else if (s <= r) { vl = Lv; vs = Lv * s; }
+    else { vs = Lv * r; vl = Lv * r / s; }
+    return sw >= sh ? { x:vl, y:vs } : { x:vs, y:vl };
+  }
+  function needDist(z) {
+    const p = paperDims(), v = visible(1), m = 1.08;
+    const Lneed = Math.max(m * p.x / v.x, m * p.y / v.y);
+    return Lneed / (2 * TAN[String(z)]);
+  }
+  function digitalZ() { return dz; }
+
+  function frameRect() {
+    const cw = innerWidth, ch = innerHeight;
+    const bottom = (bar.style.display === 'none') ? ch : bar.getBoundingClientRect().top;
+    let vw = cam.videoWidth, vh = cam.videoHeight;
+    if (!vw || !vh) { vw = cw > ch ? 4 : 3; vh = cw > ch ? 3 : 4; }
+    const k = P.contain ? Math.min(cw / vw, ch / vh) : Math.max(cw / vw, ch / vh);
+    let w = vw * k, h = vh * k, l = (cw - w) / 2, t = (ch - h) / 2;
+    const z = digitalZ();
+    if (z !== 1) { l = cw / 2 - (cw / 2 - l) * z; t = ch / 2 - (ch / 2 - t) * z; w *= z; h *= z; }
+    const L = Math.max(0, l), T = Math.max(0, t), R = Math.min(cw, l + w), B = Math.min(bottom, t + h);
+    const rw = R - L, rh = B - T;
+    if (rw <= 0 || rh <= 0) return null;
+    const p = paperDims(), pa = p.x / p.y;
+    let fw = rw * 0.94, fh = fw / pa;
+    if (fh > rh * 0.94) { fh = rh * 0.94; fw = fh * pa; }
+    return { x:L + (rw - fw) / 2, y:T + (rh - fh) / 2, w:fw, h:fh };
+  }
+  function updateFrame() {
+    cam.style.objectFit = P.contain ? 'contain' : 'cover';
+    const f = (P.frame && cam.srcObject && $('align').style.display !== 'flex') ? frameRect() : null;
+    if (!f) { frameEl.style.display = 'none'; return; }
+    Object.assign(frameEl.style, { display:'block', left:f.x + 'px', top:f.y + 'px', width:f.w + 'px', height:f.h + 'px' });
+    $('frameLbl').textContent = paperLabel();
+  }
+  window.addEventListener('resize', () => { updateFrame(); renderPaper(); });
+
+  function fitToFrame() {
+    if (!st.img) { toast('Primero elige una foto'); return; }
+    const f = frameRect(); if (!f) return;
+    const w0 = parseFloat(ref.style.width), h0 = parseFloat(ref.style.height);
+    st.s = Math.min(f.w / w0, f.h / h0); st.r = 0;
+    st.x = f.x + f.w / 2 - innerWidth / 2;
+    st.y = f.y + f.h / 2 - innerHeight / 2;
+    refresh();
+  }
+
+  // ---------- Papel: interfaz ----------
+  function applyType() { if (P.type !== 'custom') { P.w = PAPERS[P.type][1]; P.h = PAPERS[P.type][2]; } }
+  function syncPaperUI() {
+    $('selPaper').value = P.type;
+    $('cw').value = P.w; $('ch').value = P.h;
+    $('customRow').style.display = P.type === 'custom' ? 'flex' : 'none';
+    $('oV').classList.toggle('on', P.orient === 'v');
+    $('oH').classList.toggle('on', P.orient === 'h');
+    $('cFrame').checked = !!P.frame; $('cContain').checked = !!P.contain;
+    $('inH').value = P.H || '';
+    renderPaper(); updateFrame();
+  }
+  let recZoom = null;
+  function renderPaper() {
+    const H = +P.H || 0, zs = [0.5, 1, 2], d = {};
+    zs.forEach(z => { d[z] = needDist(z); });
+    $('res').innerHTML = zs.map(z =>
+      '<div class="res' + (H && d[z] <= H ? ' ok' : '') + '"><b>' + zl(z) + '</b><span>' + fmt(d[z]) + ' cm</span></div>').join('');
+    recZoom = null;
+    [2, 1, 0.5].forEach(z => { if (recZoom === null && H && d[z] <= H) recZoom = z; });
+    let txt = '';
+    if (H) txt = recZoom !== null
+      ? 'Con tu soporte de ' + fmt(H) + ' cm, usa ' + zl(recZoom) + '.'
+      : 'Con ' + fmt(H) + ' cm no cabe ni con 0,5x. Sube el móvil a ' + fmt(Math.ceil(d[0.5])) + ' cm o más.';
+    $('recTxt').textContent = txt;
+    const u = $('useRec');
+    u.style.display = (recZoom !== null && (recZoom !== curZoom) && (recZoom !== 0.5 || lens.wide)) ? 'block' : 'none';
+    u.textContent = 'Usar ' + (recZoom === null ? '' : zl(recZoom));
+  }
+  function openSheet(id) { $(id).classList.add('open'); }
+  function closeSheets() { document.querySelectorAll('.sheet').forEach(s => s.classList.remove('open')); }
+  document.querySelectorAll('.sheet').forEach(s => s.addEventListener('click', e => { if (e.target === s) closeSheets(); }));
+
+  $('bPaper').addEventListener('click', () => { syncPaperUI(); openSheet('shPaper'); });
+  $('pClose').addEventListener('click', closeSheets);
+  $('selPaper').addEventListener('change', e => { P.type = e.target.value; applyType(); saveP(); syncPaperUI(); });
+  const num = v => parseFloat(String(v).replace(',', '.')) || 0;
+  $('cw').addEventListener('input', e => { const v = num(e.target.value); if (v > 0) { P.w = v; saveP(); renderPaper(); updateFrame(); } });
+  $('ch').addEventListener('input', e => { const v = num(e.target.value); if (v > 0) { P.h = v; saveP(); renderPaper(); updateFrame(); } });
+  $('inH').addEventListener('input', e => { P.H = num(e.target.value); saveP(); renderPaper(); });
+  $('oV').addEventListener('click', () => { P.orient = 'v'; saveP(); syncPaperUI(); });
+  $('oH').addEventListener('click', () => { P.orient = 'h'; saveP(); syncPaperUI(); });
+  $('cFrame').addEventListener('change', e => { P.frame = e.target.checked; saveP(); updateFrame(); });
+  $('cContain').addEventListener('change', e => { P.contain = e.target.checked; saveP(); updateFrame(); renderPaper(); });
+  $('useRec').addEventListener('click', async () => { if (recZoom !== null) { await setZoom(recZoom); renderPaper(); } });
+  $('fitRef').addEventListener('click', () => { fitToFrame(); closeSheets(); });
+
+  // ---------- Imagen de referencia ----------
+  $('bPhoto').addEventListener('click', () => file.click());
+  file.addEventListener('change', async () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    st.sid = null;
+    await loadRef(f, null);
+    if (P.frame) fitToFrame();
+    file.value = '';
+  });
+  function loadRef(blob, s) {
+    return new Promise(ok => {
+      if (st.url) URL.revokeObjectURL(st.url);
+      st.blob = blob; st.url = URL.createObjectURL(blob);
+      const im = new Image();
+      im.onload = () => {
+        st.img = im; st.edgeUrl = null;
+        if (s) {
+          ref.style.width = s.w + 'px'; ref.style.height = s.h + 'px';
+          Object.assign(st, { x:s.x, y:s.y, s:s.s, r:s.r });
+        } else {
+          const k = Math.min(innerWidth * 0.9 / im.naturalWidth, innerHeight * 0.6 / im.naturalHeight);
+          ref.style.width = Math.round(im.naturalWidth * k) + 'px';
+          ref.style.height = Math.round(im.naturalHeight * k) + 'px';
+          Object.assign(st, { x:0, y:-40, s:1, r:0 });
+        }
+        ref.style.display = 'block';
+        refresh(); ok();
+      };
+      im.src = st.url;
+    });
+  }
+  function clearRef() { st.img = null; st.blob = null; ref.style.display = 'none'; }
+
+  function refresh() {
+    if (!st.img) return;
+    if (st.edge) {
+      if (!st.edgeUrl) st.edgeUrl = computeEdges(st.img, +$('det').value);
+      ref.src = st.edgeUrl;
+    } else {
+      ref.src = st.url;
+    }
+    ref.style.opacity = $('op').value / 100;
+    ref.style.filter = (st.gray && !st.edge) ? 'grayscale(1) contrast(1.4)' : 'none';
+    place();
+  }
+  function place() {
+    ref.style.transform = 'translate(-50%,-50%) translate(' + st.x + 'px,' + st.y + 'px) rotate(' + st.r + 'rad) scale(' + st.s + ')';
+  }
+
+  // ---------- Contornos (Sobel) ----------
+  function computeEdges(im, detail) {
+    const MAX = 900;
+    const k = Math.min(1, MAX / Math.max(im.naturalWidth, im.naturalHeight));
+    const w = Math.round(im.naturalWidth * k), h = Math.round(im.naturalHeight * k);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently:true });
+    x.drawImage(im, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data;
+    const gr = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) gr[i] = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
+    const b = new Float32Array(w * h);
+    for (let yy = 1; yy < h - 1; yy++) for (let xx = 1; xx < w - 1; xx++) {
+      const i = yy * w + xx;
+      b[i] = (gr[i-w-1] + gr[i-w] + gr[i-w+1] + gr[i-1] + gr[i] + gr[i+1] + gr[i+w-1] + gr[i+w] + gr[i+w+1]) / 9;
+    }
+    const thr = 140 - detail * 1.2;
+    const out = x.createImageData(w, h);
+    for (let yy = 1; yy < h - 1; yy++) for (let xx = 1; xx < w - 1; xx++) {
+      const i = yy * w + xx;
+      const gx = -b[i-w-1] - 2*b[i-1] - b[i+w-1] + b[i-w+1] + 2*b[i+1] + b[i+w+1];
+      const gy = -b[i-w-1] - 2*b[i-w] - b[i-w+1] + b[i+w-1] + 2*b[i+w] + b[i+w+1];
+      const m = Math.sqrt(gx*gx + gy*gy);
+      out.data[i*4+3] = Math.max(0, Math.min(255, (m - thr) * 6));
+    }
+    x.putImageData(out, 0, 0);
+    return c.toDataURL('image/png');
+  }
+
+  // ---------- Controles ----------
+  $('op').addEventListener('input', () => { ref.style.opacity = $('op').value / 100; });
+  $('det').addEventListener('input', () => {
+    clearTimeout(edgeTimer);
+    edgeTimer = setTimeout(() => { st.edgeUrl = null; refresh(); }, 150);
+  });
+  function setEdge(v) { st.edge = v; $('bEdge').classList.toggle('on', v); $('rowDetail').style.display = v ? 'flex' : 'none'; refresh(); updateFrame(); }
+  function setGray(v) { st.gray = v; $('bGray').classList.toggle('on', v); refresh(); }
+  function setLock(v) { st.locked = v; $('bLock').classList.toggle('on', v); $('bLock').textContent = v ? 'Bloqueada' : 'Bloquear'; }
+  $('bEdge').addEventListener('click', () => setEdge(!st.edge));
+  $('bGray').addEventListener('click', () => setGray(!st.gray));
+  $('bLock').addEventListener('click', () => setLock(!st.locked));
+  $('bHide').addEventListener('click', () => { bar.style.display = 'none'; $('show').style.display = 'block'; updateFrame(); });
+  $('show').addEventListener('click', () => { bar.style.display = 'block'; $('show').style.display = 'none'; updateFrame(); });
+
+  // ---------- Gestos: 1 dedo mueve, 2 dedos escalan y giran ----------
+  function snap(e) {
+    const p = Array.from(e.touches);
+    if (p.length === 1) g = { n:1, x:p[0].clientX, y:p[0].clientY };
+    else if (p.length >= 2) {
+      const a = p[0], c = p[1];
+      g = { n:2, d:Math.hypot(c.clientX - a.clientX, c.clientY - a.clientY),
+            a:Math.atan2(c.clientY - a.clientY, c.clientX - a.clientX),
+            x:(a.clientX + c.clientX) / 2, y:(a.clientY + c.clientY) / 2 };
+    } else g = null;
+  }
+  stage.addEventListener('touchstart', e => { if (st.locked) return; e.preventDefault(); snap(e); }, { passive:false });
+  stage.addEventListener('touchmove', e => {
+    if (st.locked || !g || !st.img) return;
+    e.preventDefault();
+    const p = Array.from(e.touches);
+    if (g.n === 1 && p.length === 1) {
+      st.x += p[0].clientX - g.x; st.y += p[0].clientY - g.y;
+      g.x = p[0].clientX; g.y = p[0].clientY;
+    } else if (g.n === 2 && p.length >= 2) {
+      const a = p[0], c = p[1];
+      const d = Math.hypot(c.clientX - a.clientX, c.clientY - a.clientY);
+      const an = Math.atan2(c.clientY - a.clientY, c.clientX - a.clientX);
+      const mx = (a.clientX + c.clientX) / 2, my = (a.clientY + c.clientY) / 2;
+      if (g.d > 0) st.s = Math.max(0.05, Math.min(10, st.s * d / g.d));
+      st.r += an - g.a;
+      st.x += mx - g.x; st.y += my - g.y;
+      g = { n:2, d, a:an, x:mx, y:my };
+    }
+    place();
+  }, { passive:false });
+  stage.addEventListener('touchend', e => { if (!st.locked) snap(e); });
+  stage.addEventListener('touchcancel', () => { g = null; });
+
+  // ---------- Sesiones guardadas (IndexedDB) ----------
+  function idb() {
+    return new Promise((ok, no) => {
+      const r = indexedDB.open('calca', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('sessions', { keyPath:'id' });
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => no(r.error);
+    });
+  }
+  async function dbDo(mode, fn) {
+    const db = await idb();
+    return new Promise((ok, no) => {
+      const t = db.transaction('sessions', mode);
+      const rq = fn(t.objectStore('sessions'));
+      t.oncomplete = () => { db.close(); ok(rq && rq.result); };
+      t.onerror = () => { db.close(); no(t.error); };
+      t.onabort = () => { db.close(); no(t.error); };
+    });
+  }
+  function snapshot() {
+    return new Promise(ok => {
+      const vw = cam.videoWidth, vh = cam.videoHeight;
+      if (!vw || !vh) { ok(null); return; }
+      const k = Math.min(1, 1280 / Math.max(vw, vh));
+      const c = document.createElement('canvas');
+      c.width = Math.round(vw * k); c.height = Math.round(vh * k);
+      c.getContext('2d').drawImage(cam, 0, 0, c.width, c.height);
+      c.toBlob(b => ok(b), 'image/jpeg', 0.82);
+    });
+  }
+  async function saveSession(asNew) {
+    if (!cam.srcObject) return;
+    try {
+      const snapB = await snapshot();
+      const rec = {
+        id: (!asNew && st.sid) ? st.sid : Date.now(), ts: Date.now(),
+        img: st.blob || null, snap: snapB,
+        ref: { x:st.x, y:st.y, s:st.s, r:st.r, w:parseFloat(ref.style.width) || 0, h:parseFloat(ref.style.height) || 0 },
+        op: +$('op').value, det: +$('det').value, edge: st.edge, gray: st.gray, locked: st.locked,
+        zoom: curZoom, P: Object.assign({}, P)
+      };
+      await dbDo('readwrite', s => s.put(rec));
+      st.sid = rec.id;
+      toast('Sesión guardada');
+      renderSessions();
+    } catch (e) { toast('No se pudo guardar'); }
+  }
+  async function renderSessions() {
+    $('sNew').style.display = st.sid ? 'block' : 'none';
+    $('sSave').textContent = st.sid ? 'Actualizar' : 'Guardar';
+    const list = $('sessList');
+    thumbs.forEach(u => URL.revokeObjectURL(u)); thumbs = [];
+    let all = [];
+    try { all = (await dbDo('readonly', s => s.getAll())) || []; } catch (e) {}
+    all.sort((a, b) => b.ts - a.ts);
+    list.innerHTML = '';
+    if (!all.length) { list.innerHTML = '<p class="note">Aún no hay sesiones guardadas.</p>'; return; }
+    all.forEach(r => {
+      const row = document.createElement('div'); row.className = 'srow';
+      const im = document.createElement('img');
+      if (r.snap) { const u = URL.createObjectURL(r.snap); thumbs.push(u); im.src = u; }
+      const tx = document.createElement('div'); tx.className = 'stxt';
+      tx.textContent = new Date(r.ts).toLocaleString('es-ES', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })
+        + (r.P ? ' · ' + paperLabel(r.P) : '');
+      const bo = document.createElement('button'); bo.textContent = 'Abrir'; bo.className = 'primary';
+      bo.style.fontSize = '13px'; bo.style.padding = '9px 12px';
+      bo.addEventListener('click', () => openSession(r.id));
+      const bd = document.createElement('button'); bd.textContent = '✕'; bd.setAttribute('aria-label', 'Borrar');
+      bd.addEventListener('click', async () => {
+        if (!confirm('¿Borrar esta sesión?')) return;
+        try { await dbDo('readwrite', s => s.delete(r.id)); } catch (e) {}
+        if (st.sid === r.id) st.sid = null;
+        renderSessions();
+      });
+      row.append(im, tx, bo, bd); list.appendChild(row);
+    });
+  }
+  async function openSession(id) {
+    let r = null;
+    try { r = await dbDo('readonly', s => s.get(id)); } catch (e) {}
+    if (!r) return;
+    closeSheets();
+    if (r.P) { Object.assign(P, r.P); saveP(); }
+    $('op').value = r.op; $('det').value = r.det;
+    st.edge = !!r.edge; st.gray = !!r.gray;
+    $('bEdge').classList.toggle('on', st.edge); $('bGray').classList.toggle('on', st.gray);
+    $('rowDetail').style.display = st.edge ? 'flex' : 'none';
+    await setZoom(r.zoom || 1);
+    syncPaperUI();
+    if (r.img) await loadRef(r.img, r.ref); else clearRef();
+    setLock(!!r.locked);
+    st.sid = r.id;
+    if (r.snap) startAlign(r.snap); else toast('Sesión abierta');
+  }
+  function startAlign(blob) {
+    if (ghostUrl) URL.revokeObjectURL(ghostUrl);
+    ghostUrl = URL.createObjectURL(blob);
+    ghost.src = ghostUrl;
+    ghost.style.objectFit = cam.style.objectFit || 'contain';
+    ghost.style.transform = cam.style.transform || 'none';
+    ghost.style.display = 'block';
+    stage.style.visibility = 'hidden';
+    bar.style.display = 'none'; $('show').style.display = 'none';
+    $('align').style.display = 'flex';
+    updateFrame();
+  }
+  $('alignOk').addEventListener('click', () => {
+    ghost.style.display = 'none';
+    stage.style.visibility = 'visible';
+    $('align').style.display = 'none';
+    bar.style.display = 'block';
+    updateFrame();
+  });
+  $('bSess').addEventListener('click', () => { renderSessions(); openSheet('shSess'); });
+  $('sClose').addEventListener('click', closeSheets);
+  $('sSave').addEventListener('click', () => saveSession(false));
+  $('sNew').addEventListener('click', () => saveSession(true));
+
+  // ---------- Service worker ----------
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  }
+})();
+</script>
+</body>
+</html>
