@@ -1,4 +1,4 @@
-const CACHE = 'calca-v1';
+const CACHE = 'calca-v3';
 const FILES = ['./', 'index.html', 'manifest.json', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -13,7 +13,14 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
+// Primero red (para recibir siempre la última versión), y caché si no hay conexión
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(caches.match(e.request).then(hit => hit || fetch(e.request)));
+  e.respondWith(
+    fetch(e.request).then(res => {
+      const copy = res.clone();
+      caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+      return res;
+    }).catch(() => caches.match(e.request))
+  );
 });
