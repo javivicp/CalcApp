@@ -1,6 +1,6 @@
 {
-  "name": "Calca",
-  "short_name": "Calca",
+  "name": "CalcApp",
+  "short_name": "CalcApp",
   "description": "Cámara oscura digital para calcar imágenes sobre papel",
   "start_url": "./",
   "scope": "./",
